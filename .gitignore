@@ -1,0 +1,18 @@
+# Kaggle credentials
+kaggle.json
+
+# Data and generated outputs (downloaded / produced by the notebook)
+dataset/
+dataset_organized/
+results/
+*.zip
+*.keras
+*.h5
+
+# Python / Jupyter
+__pycache__/
+.ipynb_checkpoints/
+.venv/
+venv/
+.env
+.DS_Store

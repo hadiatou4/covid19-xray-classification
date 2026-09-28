@@ -1,282 +1,93 @@
-# Projet Deep Learning - Vision par ordinateur
-
-## 1. Description
+# COVID-19 Chest X-ray Classification with Xception
 
-Ce projet a été réalisé dans le cadre du module Intelligence Artificielle, séance 1 : Vision par ordinateur.
+This project classifies **chest X-ray images** (radiographs, not CT scans) into three classes: **COVID-19**, **Normal** and **Viral Pneumonia**. It uses transfer learning from an ImageNet-pretrained Xception network.
 
-**Objectif :** Développer un système de classification automatique de radiographies pulmonaires pour détecter la COVID-19, distinguer les pneumonies virales et identifier les cas normaux, en utilisant le Transfer Learning avec l'architecture Xception.
+This is a course project for the *Artificial Intelligence – Computer Vision* module (November 2025), by **Hadiatou Keita** and **Asmaa Rouchdi**. The notebook and the technical report ([`rapport_technique.pdf`](rapport_technique.pdf)) are in French.
 
----
+## Data
 
-## 2. Contexte
+- **Dataset:** [COVID-19 Radiography Database](https://www.kaggle.com/datasets/tawsifurrahman/covid19-radiography-database) (Kaggle, Rahman et al.)
+- **Modality:** frontal chest X-rays (PNG)
+- **Classes used:** three of the dataset's four image folders. The `Lung_Opacity` folder and the lung masks are not used.
 
-**Secteur :** Santé - Diagnostic médical - Imagerie médicale (Radiologie)
+| Class | Images | Train | Validation | Test |
+|---|---:|---:|---:|---:|
+| COVID | 3,616 | 2,531 | 542 | 543 |
+| Normal | 10,192 | 7,134 | 1,529 | 1,529 |
+| Viral Pneumonia | 1,345 | 941 | 202 | 202 |
+| **Total** | **15,153** | **10,606** | **2,273** | **2,274** |
 
-**Problématique :** La COVID-19 présente des symptômes radiologiques souvent similaires à ceux d'autres pneumonies virales sur les radiographies pulmonaires. Un diagnostic rapide et précis par imagerie est essentiel pour le triage des patients, le contrôle de l'infection et l'optimisation du traitement. Le projet vise à développer un outil d'aide à la décision basé sur le Deep Learning pour différencier automatiquement les cas de COVID-19 des autres pathologies pulmonaires et des cas sains.
+- **Split:** 70 / 15 / 15 per class (`seed=42`).
+- **Class imbalance:** the Normal to Viral Pneumonia ratio is 7.6:1. It is handled with inverse-frequency class weights (COVID 1.40, Normal 0.50, Viral Pneumonia 3.76).
 
-**KPIs métiers :**
-- **Recall COVID-19** : Minimiser les faux négatifs (patients COVID non détectés) - Métrique critique pour la santé publique
-- **Precision globale** : Éviter les fausses alertes qui surchargent le système de santé
-- **F1-Score** : Équilibre entre précision et rappel pour une performance globale robuste
-- **AUC-ROC** : Capacité de discrimination entre les classes
-
----
+## Method
 
-## 3. Données
+- **Input:** 299×299 RGB images, Xception `preprocess_input`.
+- **Augmentation (training set only):** rotation ±15°, width and height shift 10%, shear 10%, zoom 10%, horizontal flip.
+- **Model:** Xception backbone (ImageNet weights, no top) → GlobalAveragePooling → Dense 512 (ReLU, BatchNorm, Dropout 0.5) → Dense 256 (ReLU, BatchNorm, Dropout 0.3) → Dense 3 (softmax). Total: 22.0M parameters.
+- **Training in two phases** (Adam, categorical cross-entropy, batch size 32):
+  1. The backbone is frozen, lr = 1e-3, up to 15 epochs (1.18M trainable parameters).
+  2. The last 30 backbone layers are unfrozen, lr = 1e-5, up to 10 epochs (10.1M trainable parameters).
+- **Callbacks:** EarlyStopping (val_loss, patience 5), ReduceLROnPlateau, and ModelCheckpoint on validation accuracy. The best checkpoint (validation accuracy 0.968) was evaluated once on the held-out test set.
 
-**Dataset :** COVID-19 Radiography Database  
-**Lien :** https://www.kaggle.com/datasets/tawsifurrahman/covid19-radiography-database
+## Results (held-out test set, 2,274 images)
 
-**Taille :** 
-- Total : ~18,000 images de radiographies pulmonaires
-- COVID-19 : ~3,600 images
-- Normal : ~10,200 images
-- Viral Pneumonia : ~4,500 images
-- Format : PNG/JPEG
-- Résolution : Variable (redimensionnée à 299x299 pixels)
+These are the outputs saved in the notebook.
 
-**Classes :**
-1. COVID-19 (Pneumonie COVID)
-2. Normal (Radiographies saines)
-3. Viral Pneumonia (Pneumonie virale non-COVID)
-
-**Prétraitements effectués :**
-- Redimensionnement : 299x299 pixels (format d'entrée Xception)
-- Normalisation : Préprocessing Xception (preprocess_input)
-- Encodage : One-Hot Encoding des labels
-- Split : 70% Train / 15% Validation / 15% Test (stratifié)
-- Augmentation de données (train uniquement) :
-  - Rotation : ±15°
-  - Translation : 10% horizontal/vertical
-  - Zoom : ±10%
-  - Shear : 10%
-  - Flip horizontal
-- Gestion du déséquilibre : Class weights (inversement proportionnels aux fréquences)
-
----
-
-## 4. Modèle
-
-**Architecture :** Xception avec Transfer Learning
-
-**Framework :** TensorFlow 2.15.0 / Keras
-
-**Hyperparamètres :**
-
-*Phase 1 (Base gelée) :*
-- Epochs : 15
-- Batch size : 32
-- Learning rate : 0.001
-- Optimizer : Adam
-- Loss : Categorical Crossentropy
+| Class | Precision | Recall | F1 | ROC AUC | Support |
+|---|---:|---:|---:|---:|---:|
+| COVID | 0.959 | 0.948 | 0.954 | 0.995 | 543 |
+| Normal | 0.974 | 0.975 | 0.974 | 0.993 | 1,529 |
+| Viral Pneumonia | 0.913 | 0.936 | 0.924 | 0.998 | 202 |
+| **Macro avg** | 0.949 | 0.953 | 0.951 | | 2,274 |
+| **Weighted avg** | 0.965 | 0.965 | 0.965 | | 2,274 |
 
-*Phase 2 (Fine-tuning) :*
-- Epochs : 10
-- Batch size : 32
-- Learning rate : 1e-5 (0.00001)
-- Optimizer : Adam
-- Dégel : 30 dernières couches du modèle de base
-
-**Callbacks :**
-- EarlyStopping (patience=5)
-- ReduceLROnPlateau (factor=0.5, patience=3)
-- ModelCheckpoint (sauvegarde meilleur modèle)
-
-**Structure du modèle :**
-```
-Input (299x299x3)
-    ↓
-Xception Base (pré-entraîné ImageNet, 22.9M params)
-    ↓
-GlobalAveragePooling2D
-    ↓
-Dense(512) + ReLU + BatchNorm + Dropout(0.5)
-    ↓
-Dense(256) + ReLU + BatchNorm + Dropout(0.3)
-    ↓
-Dense(3, softmax)
-```
-
-**Justification :** Xception a été choisi pour sa performance supérieure sur l'imagerie médicale grâce aux convolutions séparables en profondeur, son efficacité paramétrique et ses excellents résultats en Transfer Learning depuis ImageNet.
-
----
-
-## 5. Résultats
-
-### Métriques globales sur l'ensemble de test
-
-**Accuracy :** 96.48%  
-**Precision :** 96.57%  
-**Recall :** 96.48%  
-**F1-Score :** 96.52%  
-**Loss :** 0.0981
+- **Accuracy:** 96.48%. Micro-averaged ROC AUC: 0.997.
+- **Confusion matrix** (rows = true class, columns = predicted: COVID / Normal / Viral Pneumonia):
 
-### Métriques par classe
-
-| Classe | Precision | Recall | F1-Score | Support | AUC-ROC |
-|--------|-----------|--------|----------|---------|---------|
-| **COVID-19** | 95.90% | 94.84% | 95.37% | 543 | 0.9954 |
-| **Normal** | 97.39% | 97.45% | 97.42% | 1529 | 0.9929 |
-| **Viral Pneumonia** | 91.30% | 93.56% | 92.42% | 202 | 0.9982 |
-| **Weighted Avg** | 96.49% | 96.48% | 96.48% | 2274 | 0.9970 |
-
-### Analyse des performances
-
-**Points forts :**
-- Recall COVID-19 à 94.84% : Seulement 28 cas COVID non détectés sur 543 (excellent pour la santé publique)
-- AUC-ROC très élevés (>0.99) : Excellente capacité de discrimination
-- Performance équilibrée sur les 3 classes
-- Accuracy globale de 96.48% dépasse largement l'objectif
-
-**Analyse des erreurs :**
-- COVID → Normal : 27 confusions (cas limites ou images de faible qualité)
-- COVID → Viral Pneumonia : 1 confusion (symptômes très similaires)
-- Normal → COVID : 22 confusions (faux positifs acceptables car confirmés par PCR)
-- Viral Pneumonia → Normal : 13 confusions (sous-estimation de la pathologie)
-
-**KPIs métiers atteints :**
-- Recall COVID-19 : 94.84% (objectif >90% atteint)
-- Minimisation des faux négatifs COVID : 5.16% seulement
-- F1-Score global : 96.52% (excellent équilibre)
-- AUC-ROC micro-moyenne : 0.9970 (discrimination quasi-parfaite)
+  | | COVID | Normal | Viral Pneumonia |
+  |---|---:|---:|---:|
+  | **COVID** | 515 | 27 | 1 |
+  | **Normal** | 22 | 1,490 | 17 |
+  | **Viral Pneumonia** | 0 | 13 | 189 |
 
-### Courbes d'entraînement
+- Most errors confuse COVID with Normal (27 missed COVID cases, 22 false alarms).
+- Mean softmax confidence is 0.964 on correct predictions and 0.736 on wrong ones.
 
-Les courbes montrent :
-- Convergence progressive sans overfitting majeur
-- Amélioration significative après le fine-tuning (Phase 2)
-- Validation accuracy stable autour de 96-97%
-- Réduction continue de la loss
+## How to run
 
-### Matrice de confusion
+The notebook was run on Google Colab with a GPU runtime (TensorFlow 2.20.0).
 
-```
-Prédictions →        COVID    Normal    Viral Pneumonia
-COVID                515      27        1              (543)
-Normal               22       1490      17             (1529)
-Viral Pneumonia      0        13        189            (202)
-```
+1. Open `COVID19_Classification_Xception.ipynb` in Colab (Runtime → Change runtime type → GPU).
+2. Upload your Kaggle API token (`kaggle.json`) when prompted. The notebook downloads and unzips the dataset (about 778 MB).
+3. Run all cells. The notebook writes the model, `results.json`, the training history and the classification report to `./results/`. None of these outputs are in the repository.
 
-**Taux de vrais positifs :**
-- COVID : 94.84%
-- Normal : 97.45%
-- Viral Pneumonia : 93.56%
+To run locally instead: `pip install -r requirements.txt`, put `kaggle.json` in the working directory, and start Jupyter.
 
----
+## Limitations
 
-## 6. Reproduction
+- **Research exercise, not a medical device.** The model was evaluated on only one public dataset, with no external or clinical validation.
+- **The split is per image, not per patient.** The dataset gives no patient identifiers, so images from the same patient may appear in both the training and test sets.
+- **Possible source bias.** The classes in this dataset come from different hospitals and online repositories. The model may learn acquisition artefacts (text markers, contrast, borders) instead of pathology. This is a known issue with public COVID-19 X-ray collections (DeGrave et al., *Nature Machine Intelligence*, 2021).
+- **No explainability analysis** (for example, Grad-CAM) was performed, so the risk above has not been checked.
+- **Only one run** (one seed), so there are no confidence intervals.
 
-### Environnement
+## Possible improvements
 
-**Python :** 3.10+
+- Evaluate on an external chest X-ray dataset from a different source.
+- Add Grad-CAM saliency maps and check whether the model looks at the lungs.
+- Include the `Lung_Opacity` class, or use the provided lung masks to crop out non-lung regions.
+- Repeat training with several seeds and report the variance.
 
-**Bibliothèques principales :**
-```
-tensorflow==2.15.0
-keras==2.15.0
-numpy==1.24.3
-pandas==2.0.3
-matplotlib==3.7.2
-seaborn==0.12.2
-scikit-learn==1.3.0
-pillow==10.0.0
-kaggle==1.5.16
-```
+## Authors
 
-### Installation
+- Hadiatou Keita: [@hadiatou4](https://github.com/hadiatou4)
+- Asmaa Rouchdi
 
-```bash
-# Cloner le dépôt
-git clone https://github.com/hadiatou4/covid19-xray-classification.git
-cd covid19-xray-classification
+## References
 
-# Créer l'environnement virtuel
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+1. F. Chollet, *Xception: Deep Learning with Depthwise Separable Convolutions*, CVPR 2017.
+2. T. Rahman, M. Chowdhury et al., COVID-19 Radiography Database, Kaggle.
+3. A. J. DeGrave, J. D. Janizek, S.-I. Lee, *AI for radiographic COVID-19 detection selects shortcuts over signal*, Nature Machine Intelligence, 2021.
 
-# Installer les dépendances
-pip install -r requirements.txt
-
-# Configurer Kaggle API
-mkdir ~/.kaggle
-cp kaggle.json ~/.kaggle/
-chmod 600 ~/.kaggle/kaggle.json
-```
-
-### Exécution
-
-**Option 1 : Google Colab (Recommandé)**
-1. Ouvrir le notebook `COVID19_Classification_Xception.ipynb` dans Google Colab
-2. Runtime → Change runtime type → GPU (T4)
-3. Exécuter toutes les cellules
-
-**Option 2 : Local**
-```bash
-jupyter notebook
-# Ouvrir COVID19_Classification_Xception.ipynb
-# Exécuter les cellules séquentiellement
-```
-
-**Temps d'exécution :**
-- Phase 1 (15 epochs) : ~30-40 minutes (GPU T4)
-- Phase 2 (10 epochs) : ~20-30 minutes (GPU T4)
-- Total : ~50-70 minutes
-
----
-
-## 7. Auteurs
-
-**Étudiant 1 :** Keita Hadiatou  
-Email : haadikeita4@gmail.com  
-Contribution : Développement du modèle, entraînement, évaluation
-
-**Étudiant 2 :** Rouchdi Asmaa  
-Email : asmaarouchdi72@gmail.com  
-Contribution : Préparation des données, visualisations, analyse des résultats
-
-**Date :** Novembre 2025  
-**Module :** Intelligence Artificielle - Vision par Ordinateur
-
----
-
-## 8. Licence
-
-**Code :** MIT License
-
-**Dataset :** Creative Commons Attribution 4.0 International (CC BY 4.0)  
-Source : COVID-19 Radiography Database (Kaggle)
-
----
-
-## Avertissement
-
-Ce modèle est un outil d'aide à la décision à des fins éducatives et de recherche. Il ne doit pas remplacer l'expertise d'un professionnel de santé qualifié. Toute décision diagnostique finale doit être prise par un médecin. Une validation clinique approfondie est nécessaire avant tout déploiement en environnement réel.
-
----
-
-## Structure du projet
-
-```
-covid19-xray-classification/
-├── COVID19_Classification_Xception.ipynb   # Notebook principal
-├── README.md                                # Ce fichier
-├── requirements.txt                         # Dépendances
-├── rapport_technique.pdf                    # Rapport détaillé
-├── dataset/                                 # Dataset (non versionné)
-├── results/                                 # Résultats (générés)
-│   ├── xception_covid19_final.keras        # Modèle final
-│   ├── results.json                         # Métriques
-│   └── training_history.csv                # Historique
-└── docs/                                    # Documentation
-    ├── Fiche_de_cadrage.docx
-    └── Fiche_de_justification_dataset.docx
-```
-
----
-
-## Références
-
-1. Chollet, F. (2017). Xception: Deep Learning with Depthwise Separable Convolutions. CVPR 2017.
-2. Tawsifur Rahman et al. (2021). COVID-19 Radiography Database. Kaggle.
-3. Keras Documentation : https://keras.io/api/applications/xception/
-4. TensorFlow Transfer Learning Guide : https://www.tensorflow.org/tutorials/images/transfer_learning
+> Educational project. Not intended for clinical use.

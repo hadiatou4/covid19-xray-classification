@@ -1,0 +1,9 @@
+# The notebook was run on Google Colab with TensorFlow 2.20.0 and a GPU runtime.
+tensorflow>=2.20
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+pillow
+kaggle
